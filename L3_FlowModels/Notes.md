@@ -69,12 +69,57 @@
         * Training: Jacobian of f is A^-1, not generally efficient
     * Elementwise flows: 
         * Each element flows independently, easy to compute Jacobian, but independence assumption loses expressivity
-    * NICE/RealNVP:
+    * NICE/[RealNVP](https://arxiv.org/pdf/1605.08803.pdf):
         * Split variables in half (i.e., x_1:d/2, x_d/2+1:end)
         * First half: z_1:d/2 = x_1:d/2
-        * Second half: Multiply x by s_theta, add t_theta offset
+        * Second half: Multiply x by s_theta(x_1:d/2), add t_theta(x_1:d/2) offset
+            * We already know x_1:d/2 from first half pass
             * both s and t can be networks
+            * In NVP, s_theta is "scale"
         * Essentially, data-parameterized element-wise flows
+        * Can we easily compute determinant?
+            * Jacobian dz/dx looks like [I, 0]/[dz_d/2:d /dx_1:d/2, diag s_theta(x_1:d/2)]
+            * Determinant of a matrix with 0 above or below diagonal (**triangular**) is just product of diagonal, so just Prod(s_theta(x_1:d/2))
+            * Because inverse does not require inverse of s or t, they can be arbitrarily complex
+            * In RealNVP, alternates ordering of dimensions in each layer so that every input has a chance to be changed
+            * NICE was RealNVP without the "scale" term
+        * Example:
+            * Input a 28*28*3 x image, get out 28*28*3 z
+            * Sample new z to get x
+            * What do first and second half mean in an image? Arbitrary, could do across channels, locations, etc. It does matter, though
+            * In RealNVP
+                * Checkerboard pattern by location (alternating pixels belonging to each half)
+                * As convolutional filters are applied, # channels increases, size decreases. Then condition alternately on first half and second half of channels 
+        * Could we break it up in different ways than half?
+            * 1 vs everything else (AR). Probably is half-half to maximize information at every stage
+    * Choice of coupling transformation: What invertible transformation f should we use?
+        * x_i = f_theta(z_i; parent(x_i))
+        * Affine is most commonly used (NICE, RealNVP): x_i = z_i * a_theta(parent(x_i)) + b_theta(parent(x_i))
+        * More complex and general transformations are possible
+            * [Flow++](https://arxiv.org/pdf/1902.00275.pdf): Mixture of gaussians/logistics
+                * Also adds self-attention
+            * Other stuff for further research
+            * [Glow](https://openai.com/blog/glow/): Simplifies and enhances RealNVP architecture. Each step of flow has
+                1) Actnorm: Serves same purpose as batch normalization (transforms input using scale and bias for each channel), but for batches of 1
+                2) Invertible 1x1 convolution: 
+                    * In RealNVP: Permute inputs by reversing ordering across channel. Split into A and B. Feed in A, use to transform B, combine the two.
+                    * This is strict A -> B -> A -> B, etc. Not necessarily optimal permutation
+                    * In GLOW: Permutation is equivalent to 1x1 convolution, replace fixed permutation with learned convolutions
+                3) Affine coupling layer a la RealNVP
+            * [FFJORD](https://arxiv.org/pdf/1810.01367.pdf): Continuous time dynamics, using ODEs
+* Dequantization
+    * Imagine you have training data, train flow model on this discrete distribution. Global optimum will be to have sharp peaks. What to do?
+        * Common problem, RGB images with 255 values will have some crazy peaks
+    * Could parameterize flow not to generate peaks
+    * Could do **dequantization**
+        * An underlying data model of a 255-value image is more like rough density over each of the 3 channels
+        * Probability assigned to specific value should really be integrated around region
+        * Could uniformly perturb my data (with noise from -0.5 to 0.5) before input to get what I want (add noise)
+* Future directions
+    * Flow models have fewest papers
+    * Goals: Fast sampling, inference, training, good samples and compression
+    * How do we design flows? Architecture design
+            
         
         
         
